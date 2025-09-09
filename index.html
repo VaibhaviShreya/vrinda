@@ -1,45 +1,89 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Stock Manager</title>
-</head>
-<body style="text-align:center; margin-top:50px;">
-  <h1>Stock Manager</h1>
+const express = require("express");
+const bodyParser = require("body-parser");
+const cors = require("cors");
+const XLSX = require("xlsx");
+const path = require("path");
 
-  <input id="code" type="text" placeholder="Product Code" /><br /><br />
-  <input id="retail" type="number" placeholder="Current Stock" /><br /><br />
-  <input id="billing" type="number" placeholder="Sold Quantity" /><br /><br />
-  <input id="remarks" type="text" placeholder="Notes" /><br /><br />
+const app = express();
+const PORT = process.env.PORT || 5000;
 
-  <button onclick="updateStock()">Update Stock</button>
-  <br /><br />
-  <button onclick="loadAnalysis()">View Analysis</button>
-  <div id="analysis"></div>
+app.use(cors());
+app.use(bodyParser.json());
 
-  <script>
-    async function updateStock() {
-      const code = document.getElementById("code").value;
-      const retail = document.getElementById("retail").value;
-      const billing = document.getElementById("billing").value;
-      const remarks = document.getElementById("remarks").value;
+// Excel file path
+const filePath = path.join(__dirname, "stocks.xlsx");
 
-      const res = await fetch("http://localhost:5000/update-stock", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, retail, billing, remarks }),
-      });
+// Serve index.html (frontend) at root
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
 
-      const result = await res.json();
-      alert(result.message || "Stock updated!");
-    }
+// -------- Excel API --------
+const loadData = () => {
+  const wb = XLSX.readFile(filePath);
+  const ws = wb.Sheets["Sheet1"];
+  return XLSX.utils.sheet_to_json(ws);
+};
 
-    async function loadAnalysis() {
-      const res = await fetch("http://localhost:5000/analysis");
-      const data = await res.json();
-      document.getElementById("analysis").innerHTML =
-        "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
-    }
-  </script>
-</body>
-</html>
+const saveData = (data) => {
+  const wb = XLSX.readFile(filePath);
+  const ws = XLSX.utils.json_to_sheet(data);
+  wb.Sheets["Sheet1"] = ws;
+  XLSX.writeFile(wb, filePath);
+};
+
+// Update stock
+app.post("/update-stock", (req, res) => {
+  const { code, retail, billing, remarks } = req.body;
+  let data = loadData();
+
+  let item = data.find((d) => String(d.Code) === String(code));
+
+  if (item) {
+    if (retail !== undefined) item.Retail = Number(retail);
+    if (billing !== undefined) item.Billing = Number(billing);
+    if (remarks !== undefined) item.Remarks = remarks;
+  } else {
+    return res.status(404).json({ error: "Product not found" });
+  }
+
+  saveData(data);
+  res.json({ success: true, message: "Stock updated!", item });
+});
+
+// Get all stocks
+app.get("/stocks", (req, res) => {
+  res.json(loadData());
+});
+
+// Analysis
+app.get("/analysis", (req, res) => {
+  const data = loadData();
+  if (data.length === 0) return res.json({ message: "No data available" });
+
+  const totalStock = data.reduce((sum, i) => sum + (Number(i.Retail) || 0), 0);
+  const totalSold = data.reduce((sum, i) => sum + (Number(i.Billing) || 0), 0);
+
+  const lowStock = data.reduce((min, i) =>
+    (Number(i.Retail) || 0) < (Number(min.Retail) || Infinity) ? i : min
+  );
+  const highStock = data.reduce((max, i) =>
+    (Number(i.Retail) || 0) > (Number(max.Retail) || 0) ? i : max
+  );
+
+  res.json({
+    totalAvailable: totalStock,
+    totalSold: totalSold,
+    lowestStock: lowStock,
+    highestStock: highStock,
+  });
+});
+
+// Fallback (in case of refresh on frontend)
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
+app.listen(PORT, () => {
+  console.log(`✅ Server running at http://localhost:${PORT}`);
+});
