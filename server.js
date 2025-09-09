@@ -14,9 +14,11 @@ app.use(bodyParser.json());
 const filePath = path.join(__dirname, "stocks.xlsx");
 
 // Serve index.html (frontend) at root
-app.get("/", (req, res) => {
+// ✅ Works in Express v5
+app.use((req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
+
 
 // -------- Excel API --------
 const loadData = () => {
@@ -87,3 +89,4 @@ app.get("*", (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ Server running at http://localhost:${PORT}`);
 });
+
