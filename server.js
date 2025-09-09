@@ -2,31 +2,37 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const XLSX = require("xlsx");
+const path = require("path");
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(bodyParser.json());
 
-const filePath = "stocks.xlsx";
+// Excel file path
+const filePath = path.join(__dirname, "stocks.xlsx");
 
-// Load data from Excel
+// Serve index.html (frontend) at root
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
+// -------- Excel API --------
 const loadData = () => {
   const wb = XLSX.readFile(filePath);
   const ws = wb.Sheets["Sheet1"];
   return XLSX.utils.sheet_to_json(ws);
 };
 
-// Save data back to Excel
 const saveData = (data) => {
+  const wb = XLSX.readFile(filePath);
   const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+  wb.Sheets["Sheet1"] = ws;
   XLSX.writeFile(wb, filePath);
 };
 
-// Update stock by product code
+// Update stock
 app.post("/update-stock", (req, res) => {
   const { code, retail, billing, remarks } = req.body;
   let data = loadData();
@@ -50,7 +56,7 @@ app.get("/stocks", (req, res) => {
   res.json(loadData());
 });
 
-// Analysis: total available, sold, low stock, high stock
+// Analysis
 app.get("/analysis", (req, res) => {
   const data = loadData();
   if (data.length === 0) return res.json({ message: "No data available" });
@@ -73,16 +79,9 @@ app.get("/analysis", (req, res) => {
   });
 });
 
-// Debug route: check headers in the Excel
-app.get("/debug-headers", (req, res) => {
-  const data = loadData();
-  if (data.length === 0) {
-    return res.json({ message: "No data found in Excel" });
-  }
-  res.json({
-    headers: Object.keys(data[0]),
-    firstRow: data[0],
-  });
+// Fallback (in case of refresh on frontend)
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
 });
 
 app.listen(PORT, () => {
